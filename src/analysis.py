@@ -1,8 +1,9 @@
 import warnings
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Dict, Any, Set
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from pandas import DataFrame, Index
 
 warnings.filterwarnings("ignore")
 sns.set(rc={"figure.figsize": (19, 10)})
@@ -43,7 +44,6 @@ class Analysis:
         "joint": sns.jointplot,
         "kde": sns.kdeplot,
         "line": sns.lineplot,
-        "lm": sns.lmplot,
         "pair": sns.pairplot,
         "custom_pair": None,
         "point": sns.pointplot,
@@ -64,15 +64,25 @@ class Analysis:
         "ecdf",
         "kde",
         "pair",
-        "custom_pair" "heatmap",
+        "custom_pair",
+        "heatmap",
     ]
-    __NUMERIC_PLOTS = ["lm", "resid", "reg", "kde", "dist"]
+    __NUMERIC_PLOTS = ["resid", "reg", "kde", "dist"]
 
     def __init__(self, dataframe: pd.DataFrame):
         """
         :param dataframe: pandas dataframe
         """
         # initializing all variables
+        self.numeric_dtypes = [
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "float16",
+            "float32",
+            "float64",
+        ]
         self.grouped_df = None
         self.add_rug = None
         self.hue = None
@@ -134,6 +144,10 @@ class Analysis:
         plt.xticks(rotation=self.rotation)
         # adding title
         y_for_title = f" and {y}" if y is not None else ""
+
+        # joint plot has small shape so setting its tile to none for now will be updated later
+        if self.plot_name == "joint":
+            self.title = ""
         plt.title(
             self.title
             if self.title is not None
@@ -149,7 +163,8 @@ class Analysis:
         :param y: y-axis value of plot
         """
         # adding rug plot based on condition
-        sns.rugplot(data=self.df, x=self.x, y=y, hue=self.hue) if self.add_rug else None
+        sns.rugplot(data=self.df, x=self.x, y=y,
+                    hue=self.hue) if self.add_rug else None
 
     @staticmethod
     def _convert_text_to_number_(text: plt.Text):
@@ -211,14 +226,14 @@ class Analysis:
         :return: None
         """
         # getting value counts of x
-        data = self.df[self.x].value_counts().reset_index()
+        data = self.df[self.x].value_counts(ascending=False).reset_index()
         # converting labels to string so that it won't be sorted when plotted
         data["index"] = data["index"].apply(lambda x: str(x))
         # if user only wants top then cutting df to top 10 values
         if self.plot_name == "top_count":
             data = data.iloc[: self.top]
         # displaying a bar plot of x
-        sns.barplot(data=data, x="index", color="cyan", y=self.x)
+        sns.barplot(data=data, x="index", y=self.x, order=data["index"])
 
     def _plot_pair_plot_(self):
         """
@@ -242,8 +257,33 @@ class Analysis:
             self.df[[self.x] if self.x is not None else self.df.columns].boxplot()
         plt.show()
 
+    def convert_categorical_data(
+        self, label_dict: dict = None
+    ) -> tuple[DataFrame, dict[Any, Index], set[Any]]:
+        """
+        it converts categorical columns to numeric columns
+        :param label_dict: previous mapping to the elements of columns
+        :return: updated pandas dataframe, mapping, names of categorical columns
+        """
+        if label_dict is None:
+            label_dict = {}
+        df = self.df.copy()
+        # initializing categorical column as a set as it might be repeated in the below two steps
+        cat_cols = set()
+        # automatically converting categorical cols to numerical
+        # selecting all cols except numeric types
+        cat_cols = cat_cols.union(df.select_dtypes(
+            exclude=self.numeric_dtypes).columns)
+        for cat_col in cat_cols:
+            # converting them to numeric and storing their mapping
+            classes = pd.Categorical(df[cat_col])
+            df[cat_col] = classes.codes
+            label_dict[cat_col] = classes.categories
+        return df, label_dict, cat_cols
+
     def make_pair_plot(
         self,
+        columns_use: List[str] = None,
         convert_categorical: bool = False,
         categories_boundary: int = None,
         label_dict=None,
@@ -260,6 +300,7 @@ class Analysis:
         Pair plot is a good way to visualize the relationship between all the features of a dataframe.
 
         Parameters:
+        :param columns_use: columns to use
         :param convert_categorical: it will automatically convert non-numeric columns to categorical-columns
         :param categories_boundary: convert numeric categorical columns to categorical
         :param label_dict: dictionary containing mapping of the categorical columns
@@ -273,46 +314,27 @@ class Analysis:
 
         :return: None|tuple(pd.DataFrame,dict)
         """
-        # creating a copy of the dataframe
-        df = self.df
-        df = df.copy()
-
         # initializing label_dictionary for categorical values
         if label_dict is None:
             label_dict = {}
 
-        # initializing categorical column as a set as it might be repeated in the below two steps
+        # converting cat_vals into numeric vals
         cat_cols = set()
-
-        numeric_dtypes = [
-            "int8",
-            "int16",
-            "int32",
-            "int64",
-            "float16",
-            "float32",
-            "float64",
-        ]
-
-        # automatically converting categorical cols to numerical
         if convert_categorical:
-            label_dict = {}
-            # selecting all cols except numeric types
-            cat_cols = cat_cols.union(df.select_dtypes(exclude=numeric_dtypes).columns)
-            for cat_col in cat_cols:
-                # converting them to numeric and storing their mapping
-                classes = pd.Categorical(df[cat_col])
-                df[cat_col] = classes.codes
-                label_dict[cat_col] = classes.categories
-
+            df, label_dict, cat_cols = self.convert_categorical_data(
+                label_dict)
+        else:
+            df = self.df.copy()
+        df = df[columns_use] if columns_use else df
         # selecting only numeric types
-        df = df.select_dtypes(numeric_dtypes)
+        df = df.select_dtypes(self.numeric_dtypes)
 
         columns = df.columns
 
         # getting categorical cols names from numerical columns according to given boundary
         if categories_boundary:
-            cat_cols = cat_cols.union(df.columns[(df.nunique() <= categories_boundary)])
+            cat_cols = cat_cols.union(
+                df.columns[(df.nunique() <= categories_boundary)])
 
         if verbose:
             print("Categorical columns =", cat_cols)
@@ -393,12 +415,14 @@ class Analysis:
                 else:  # if both row and col are numerical than showing a regression plot between them
                     sns.regplot(df, x=col, y=row, ax=cx, color="darkblue")
 
-                # Some plots are already labeled but if it's not labeled, we make sure to label it for better readability and understanding of the data.
+                # Some plots are already labeled but if it's not labeled, we make sure to label it
+                # for better readability and understanding of the data.
                 if not labeled_plot:
                     cx.set(xlabel=col, ylabel=row)
                 # showing processes info if required
                 if verbose:
-                    print(f"Done plot {plot_number}/{len(columns) * len(columns)}")
+                    print(
+                        f"Done plot {plot_number}/{len(columns) * len(columns)}")
                 # increasing the number of plots drawn
                 plot_number += 1
         if save_path:
@@ -416,10 +440,12 @@ class Analysis:
     def _heatmap_(self):
         """
         makes heatmap of dataframe based on the correlation of columns of df
+        it also shows corr with categorical values
         :return: None
         """
         # making correlations
-        corr = self.df.corr()
+        converted_data, labled_dict, cat_cols = self.convert_categorical_data()
+        corr = converted_data.corr()
         # making heatmap
         self.__PLOTS["heatmap"](corr, annot=True, cmap="Greys")
         # showing plot
@@ -442,7 +468,8 @@ class Analysis:
         try:
             # plotting data
             self.__PLOTS[self.plot_name](
-                x=self.df[self.x], color="cyan" if self.plot_name in ["count"] else None
+                x=self.df[self.x], color="cyan" if self.plot_name in [
+                    "count"] else None
             )
         except ValueError:
             # above line will raise a value error if data given to it is not numeric for some plots
@@ -469,41 +496,31 @@ class Analysis:
                 aspect=1.5,
                 label=name,
             ).fig.suptitle(
-                f"Analysis of {self.x} based on {y} by {self.plot_name}_plot",  # setting its title
+                # setting its title
+                f"Analysis of {self.x} based on {y} by {self.plot_name}_plot",
                 fontsize=self.title_font,
             )
         else:
             try:
                 # creating plot for Y if it is not a facet plot
                 self.__PLOTS[self.plot_name](
-                    x=self.x,
-                    y=y,
-                    hue=self.hue,
-                    label=name,
-                    data=self.df,
-                    color="cyan" if self.plot_name in ["bar", "boxen", "box"] else None,
+                    x=self.x, y=y, hue=self.hue, label=name, data=self.df,
                 )
             except TypeError:
                 try:
-                    # some plots dont except hue so type error is raised
+                    # some plots dont except hue and some label so type error is raised
                     self.__PLOTS[self.plot_name](
-                        x=self.x,
-                        y=y,
-                        label=name,
-                        data=self.df,
-                        color="cyan"
-                        if self.plot_name in ["bar", "boxen", "box"]
-                        else None,
-                    ) if self.plot_name not in ["bar", "box"] else self.__PLOTS[
+                        x=self.x, y=y, label=name, data=self.df,
+                    ) if self.plot_name not in [
+                        "bar",
+                        "box",
+                        "boxen",
+                        "point",
+                        "joint",
+                    ] else self.__PLOTS[
                         self.plot_name
                     ](
-                        x=self.x,
-                        y=y,
-                        hue=self.hue,
-                        data=self.df,
-                        color="cyan"
-                        if self.plot_name in ["bar", "boxen", "box"]
-                        else None,
+                        x=self.x, y=y, hue=self.hue, data=self.df,
                     )
 
                 except TypeError:
