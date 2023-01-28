@@ -9,7 +9,6 @@ from pandas import DataFrame, Index
 warnings.filterwarnings("ignore")
 sns.set(rc={"figure.figsize": (19, 10)})
 
-
 class Analysis:
     """
     Analysis(dataframe)
@@ -221,7 +220,7 @@ class Analysis:
             for ag in self.agg
         ]
 
-    def _count_plot_(self):
+    def _count_plot_(self, ax=None):
         """
         creates a count plot in descending order
         :return: None
@@ -234,7 +233,7 @@ class Analysis:
         if self.plot_name == "top_count":
             data = data.iloc[: self.top]
         # displaying a bar plot of x
-        sns.barplot(data=data, x="index", y=self.x, order=data["index"])
+        sns.barplot(data=data, x="index", y=self.x, order=data["index"], ax=ax)
 
     def _plot_pair_plot_(self):
         """
@@ -435,7 +434,7 @@ class Analysis:
         if return_data:
             return df, label_dict
 
-    def _heatmap_(self):
+    def _heatmap_(self, ax=None):
         """
         makes heatmap of dataframe based on the correlation of columns of df
         it also shows corr with categorical values
@@ -445,11 +444,11 @@ class Analysis:
         converted_data, labled_dict, cat_cols = self.convert_categorical_data()
         corr = converted_data.corr()
         # making heatmap
-        self.__PLOTS["heatmap"](corr, annot=True, cmap="Greys")
+        self.__PLOTS["heatmap"](corr, annot=True, cmap="Greys", ax=ax)
         # showing plot
         self._show_plots_(None)
 
-    def _create_special_plots_(self):
+    def _create_special_plots_(self, ax=None):
         """
         shows the plots with only x data
         """
@@ -458,17 +457,15 @@ class Analysis:
         elif self.plot_name == "custom_pair":
             return self.make_pair_plot(convert_categorical=True, verbose=True,title=self.title, rotation=self.rotation)
         elif self.plot_name == "heatmap":
-            return self._heatmap_()
+            return self._heatmap_(ax)
         elif self.plot_name == "feature_box":
             return self._feature_box_()
         elif self.plot_name in ["count", "top_count"]:
-            return self._count_plot_()
+            return self._count_plot_(ax)
         try:
             # plotting data
             self.__PLOTS[self.plot_name](
-                x=self.df[self.x], color="cyan" if self.plot_name in [
-                    "count"] else None
-            )
+                x=self.df[self.x], label=f'{self.x}_{self.plot_name}',ax=ax)
         except ValueError:
             # above line will raise a value error if data given to it is not numeric for some plots
             # checking if plot is numeric
@@ -476,7 +473,7 @@ class Analysis:
         # adding rug based on condition
         self._add_rug_(None)
 
-    def _create_plot_(self, y, name=None):
+    def _create_plot_(self, y, name=None, ax=None):
         """
         creates the plots object with given data
         :param y: y-axis value
@@ -493,6 +490,7 @@ class Analysis:
                 height=10,  # facet plots have height and aspect ratio
                 aspect=1.5,
                 label=name,
+                ax=ax,
             ).fig.suptitle(
                 # setting its title
                 f"Analysis of {self.x} based on {y} by {self.plot_name}_plot",
@@ -502,13 +500,13 @@ class Analysis:
             try:
                 # creating plot for Y if it is not a facet plot
                 self.__PLOTS[self.plot_name](
-                    x=self.x, y=y, hue=self.hue, label=name, data=self.df,
+                    x=self.x, y=y, hue=self.hue, label=name, data=self.df,ax=ax,
                 )
             except TypeError:
                 try:
                     # some plots dont except hue and some label so type error is raised
                     self.__PLOTS[self.plot_name](
-                        x=self.x, y=y, label=name, data=self.df,
+                        x=self.x, y=y, label=name, data=self.df,ax=ax,
                     ) if self.plot_name not in [
                         "bar",
                         "box",
@@ -518,7 +516,7 @@ class Analysis:
                     ] else self.__PLOTS[
                         self.plot_name
                     ](
-                        x=self.x, y=y, hue=self.hue, data=self.df,
+                        x=self.x, y=y, hue=self.hue, data=self.df,ax=ax,
                     )
 
                 except TypeError:
@@ -624,8 +622,12 @@ class Analysis:
         :param title: title of graph
         """
         # creating all plots
+        figure, ax = plt.subplots(1,1)
+        print(ax)
         for plot in plots:
-            plot._create_plot_(plot.y[0], name=plot.y[0])
+            plot._create_special_plots_(ax) if plot.plot_name in plot.__SPECIAL_PLOTS else plot._create_plot_(
+                plot.y[0],name=plot.y[0], ax=ax
+            )
         # adding title and showing the plot
         plt.title(title)
         plt.legend()
