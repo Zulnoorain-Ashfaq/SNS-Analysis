@@ -1,4 +1,5 @@
 import warnings
+from tqdm import tqdm
 from typing import Union, List, Tuple, Dict, Any, Set
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -351,8 +352,8 @@ class Analysis:
             title if title is not None else "PAIR PLOT",
             fontsize=title_size * len(columns),
         )
-
-        plot_number = 1
+        if verbose:
+            pbar = tqdm(range(len(columns)**2))
         # running loop for every col as a row
         for row, rx in zip(columns, ax):
             # running loop for every col as a column
@@ -421,10 +422,7 @@ class Analysis:
                     cx.set(xlabel=col, ylabel=row)
                 # showing processes info if required
                 if verbose:
-                    print(
-                        f"Done plot {plot_number}/{len(columns) * len(columns)}")
-                # increasing the number of plots drawn
-                plot_number += 1
+                    pbar.update()
         if save_path:
             print(f"saving plot as {save_path}")
             plt.savefig(save_path, dpi=300)
@@ -458,7 +456,7 @@ class Analysis:
         if self.plot_name == "pair":
             return self._plot_pair_plot_()
         elif self.plot_name == "custom_pair":
-            return self.make_pair_plot()
+            return self.make_pair_plot(convert_categorical=True, verbose=True,title=self.title, rotation=self.rotation)
         elif self.plot_name == "heatmap":
             return self._heatmap_()
         elif self.plot_name == "feature_box":
@@ -539,7 +537,7 @@ class Analysis:
     def make_plot(
         self,
         plot_name: str,
-        x: str = None,
+        x: Union[List, str] = None,
         y: Union[List, str] = None,
         title: str = None,
         title_font: int = 20,
@@ -553,7 +551,7 @@ class Analysis:
         """
         shows the plot with given data
         :param plot_name: name of plot
-        :param x: x label
+        :param x: x label its list form is only valid in feature_plot
         :param y: y label
         :param title: title of plot
         :param title_font: font size f title
@@ -587,6 +585,7 @@ class Analysis:
             if self.plot_name not in [
                 "heatmap",
                 "pair",
+                "custom_pair",
                 "feature_box",
             ]:  # these plots have there separate labels
                 self._show_plots_(None)
